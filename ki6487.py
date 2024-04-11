@@ -1,75 +1,119 @@
-from get_new_usb_devices import get_current_devices_list, get_dev_path_from_pid_vid_sn
-import serial
-import re
+from scpi_device import SCPIDevice        
+
+import logging
+from logtools import create_logger
+mylogger=create_logger(log_name="ki6487",log_level=logging.DEBUG)
+
+class ki6487(SCPIDevice):
 
 
-
-class ConfStringL(object):
-    """
-    lighweight confstring typically pid=xxxx,vid=yyyyy,sn=zzzzz,baudrate=cccc,....
-    """
-    def __init__(self, confstring,confstring_def={}):
-        
-        self.conf_as_dict={}
-        for k,v in [i.split("=",maxsplit=1) for i in confstring.split(",")]:
-            if confstring_def.get(k):                
-                v = confstring_def.get(k)(v)
-                    
-            self.conf_as_dict.update(((k,v),))
-        print(self.conf_as_dict)
-
-    def get_conf(self):
-        return self.conf_as_dict
-
-
-
-class UsbSerial(object):
-    confstring_def={
-        "pid":int,
-        "vid":int,
-        "baudrate":int,
-        "timeout":int,
+    # commands is a dictionary to map easily SCPI strings to methods of the class.
+    # A typical entry is
+    #     method_name : {
+    #                     "cmd_string": the string that will be send to the device,
+    #                     "type": either query or write
+    #   }
+    # the idea is to parse the "cmd_string" to define the variable that are expected or optionnal
+    # for clarity the best is to write the full 
+    extra_commands ={
+        "read"      : {"cmd_string": "READ?"   , "type": "query", },
         }
-    def __init__(self, confstring_l):
-        # analyse the confstring
-        conf = ConfStringL(confstring_l, self.confstring_def).get_conf()
-        pid = conf.pop("pid")
-        vid = conf.pop("vid")
-        sn = conf.pop("sn")
-        if sn == "None":
-            sn = None
-
-        device_path = get_dev_path_from_pid_vid_sn(pid,vid,sn,get_current_devices_list())
-        print(f"device path {device_path}")
-
-        # configure the device
-        self.device = serial.Serial(device_path,**conf)
-
-
-    def _send(self,string):
-        pass
-
-    def __receive(self):
-        return "OK"
 
 
 
+    def __init__(self,confstring):
+        super(ki6487,self).__init__(confstring)
+        self.MAX_COUNT = 2        
+        # flush the msg queue
+        self.check_errors()
 
-class ki6487(object):
-    def __init__(self, confstring):
+    def __getattr__(self,kc):
+        mylogger.debug("in __getattr__ %s"% (kc))
 
-        comm_device_type, comm_confstring = re.search("([^(]*)\((.*)\)",confstring).groups()
-        
-        if comm_device_type == "usbserial":
-            self.comm_device = UsbSerial(comm_confstring)
+        if kc in self.commands.keys():
+            return self.create_function(kc)
         else:
-            raise Exception("commnunication protocol {comm_device_type} not implemented")
+            print("Available functions")
+            print(", ".join(self.commands.keys()))
+            print(",".join([func for func in dir(self) if callable(getattr(self, func)) and not func.startswith("__")]))
+            raise AttributeError("%s is not an attibute of the class %s" % (kc,self.__class__.__name__))
+
+    def create_function(self,name):
+        
+        func_def = self.commands[name]
+        if func_def["type"]=="query":
+            function_to_execute = self._query
+        elif func_def["type"]=="write":
+            function_to_execute = self._write
+
+        if "<n>" in func_def["cmd_string"]:
+            string_to_send = func_def["cmd_string"].replace("<n>","%d")
+        else:
+            string_to_send = func_def["cmd_string"]
+        mylogger.debug("string for command %s (type %s) is %s"% (name,func_def["type"],string_to_send))
+        def f(*args):
+            return function_to_execute(string_to_send % args)
+        return f
         
 
 
-
         
-        
-if __name__ == "__main__":
+    def sanitize(self, input_string):
+        if type(input_string) == type("a"):
+            return (input_string+self.EOT).encode()
+        return input_string+self.EOT.encode()
     
-    k = ki6487("usbserial(pid=8200,vid=1367,sn=None,baudrate=57600,timeout=1)")
+    def check_errors(self):
+        DO_CHECK = True
+        err_msg = []
+        while DO_CHECK:
+            self.comm_device._write(self.sanitize("SYST:ERR?"))
+            res = self.comm_device._read().decode().strip().split(",")
+            if len(res) == 2:
+                if res[0] == '0':
+                    DO_CHECK=False
+                else:
+                    err_msg.append(", ".join([str(i) for i in res]))
+            else:
+                err_msg.append("got strange data %s" % str(res))
+        if err_msg:
+            return -1,";".join(err_msg)
+        return 0,"OK"
+
+    def _write(self,data_to_send):
+        mylogger.debug("%s -> %s"% (data_to_send,str(self.sanitize(data_to_send))))
+        self.comm_device._write(self.sanitize(data_to_send))
+        self.comm_device._read()
+        err_status, err_response = self.check_errors()
+        if err_status:
+            return -1,f"got error {err_status} {err_response}"
+        else:
+            return 0,"ok"
+        
+
+        
+    def _query(self,data_to_send):
+        mylogger.debug("%s -> %s"% (data_to_send,str(self.sanitize(data_to_send))))
+        self.comm_device._write(self.sanitize(data_to_send))
+        response = self.comm_device._read()
+        count = 0
+        while not response and count < self.MAX_COUNT:
+            print("response", response)
+            count += 1
+            response = self.comm_device._read()
+        if count == self.MAX_COUNT:
+            return -1,f"timeout while trying to receive data from the query {data_to_send}"
+
+        err_status, err_response = self.check_errors()
+        if err_status:
+            return -1,f"got error {err_status} {err_response}"
+        else:
+            return 0,response.decode().strip()
+
+                
+if __name__ == "__main__":
+
+    
+    k = ki6487("usb_prologix(pid=24577,vid=1027,sn=None,baudrate=57600,timeout=10)")
+    print(k.idn())
+    

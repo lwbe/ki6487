@@ -16,10 +16,10 @@ def get_info_from_device_path(device_paths, devices):
                 r.append({"device":d.device,
                           "pid":d.pid,
                           "vid":d.vid,
-                          "sn":d.serial_number})
+                          "serial_number":d.serial_number})
     return r
 
-def get_dev_path_from_pid_vid_sn(pid,vid,sn,devices):
+def get_dev_path_from_pid_vid_sn(pid,vid,serial_number,devices):
 
     for d in devices:
         if pid:
@@ -28,8 +28,8 @@ def get_dev_path_from_pid_vid_sn(pid,vid,sn,devices):
         if vid:
             if vid != d.vid:
                 continue
-        if sn:
-            if sn != d.sn:
+        if serial_number:
+            if serial_number != d.serial_number:
                 continue
         return d.device
     return None
@@ -70,7 +70,7 @@ if __name__ == "__main__":
         print_info(data)
         if data:
             for d in data:
-                found_path = get_dev_path_from_pid_vid_sn(d["pid"],d["vid"],d["sn"],previous_devices)
+                found_path = get_dev_path_from_pid_vid_sn(d["pid"],d["vid"],d["serial_number"],previous_devices)
                 print(d,found_path)
     # or 
     if new_dev_path:
@@ -79,7 +79,7 @@ if __name__ == "__main__":
         print_info(data)
         if data:
             for d in data:
-                found_path = get_dev_path_from_pid_vid_sn(d["pid"],d["vid"],d["sn"],new_devices)
+                found_path = get_dev_path_from_pid_vid_sn(d["pid"],d["vid"],d["serial_number"],new_devices)
                 print(d,found_path)
 
 
