@@ -8,6 +8,8 @@ class ki6487(SCPIDevice):
 
 
     # commands is a dictionary to map easily SCPI strings to methods of the class.
+    # beware that scpi class also provides a base commands (for typical command like *IDN? or *CLS)
+    # and you should check to avoir reimplementing it. They can be overrides here if you need.
     # A typical entry is
     #     method_name : {
     #                     "cmd_string": the string that will be send to the device,
@@ -15,11 +17,20 @@ class ki6487(SCPIDevice):
     #   }
     # the idea is to parse the "cmd_string" to define the variable that are expected or optionnal
     # for clarity the best is to write the full 
-    extra_commands ={
-        "read"      : {"cmd_string": "READ?"   , "type": "query", },
+
+    device_commands = {
+        "read":{
+            "cmd_string": "READ?"           , "type": "query", },
+        "trac_cle":{
+            "cmd_string": "TRAC:CLE"        , "type": "query", },
+        "trace_usage":{
+            "cmd_string": "TRAC:FREE"       , "type": "query", },
+        "trace_set_point":{
+            "cmd_string": "TRAC:POIN <n>"   , "type": "write", },
         }
-
-
+    device_alias={
+        "TRAC:CLE" : "trace_clear_readings",
+    }
 
     def __init__(self,confstring):
         super(ki6487,self).__init__(confstring)
@@ -27,37 +38,6 @@ class ki6487(SCPIDevice):
         # flush the msg queue
         self.check_errors()
 
-    def __getattr__(self,kc):
-        mylogger.debug("in __getattr__ %s"% (kc))
-
-        if kc in self.commands.keys():
-            return self.create_function(kc)
-        else:
-            print("Available functions")
-            print(", ".join(self.commands.keys()))
-            print(",".join([func for func in dir(self) if callable(getattr(self, func)) and not func.startswith("__")]))
-            raise AttributeError("%s is not an attibute of the class %s" % (kc,self.__class__.__name__))
-
-    def create_function(self,name):
-        
-        func_def = self.commands[name]
-        if func_def["type"]=="query":
-            function_to_execute = self._query
-        elif func_def["type"]=="write":
-            function_to_execute = self._write
-
-        if "<n>" in func_def["cmd_string"]:
-            string_to_send = func_def["cmd_string"].replace("<n>","%d")
-        else:
-            string_to_send = func_def["cmd_string"]
-        mylogger.debug("string for command %s (type %s) is %s"% (name,func_def["type"],string_to_send))
-        def f(*args):
-            return function_to_execute(string_to_send % args)
-        return f
-        
-
-
-        
     def sanitize(self, input_string):
         if type(input_string) == type("a"):
             return (input_string+self.EOT).encode()
@@ -90,8 +70,6 @@ class ki6487(SCPIDevice):
         else:
             return 0,"ok"
         
-
-        
     def _query(self,data_to_send):
         mylogger.debug("%s -> %s"% (data_to_send,str(self.sanitize(data_to_send))))
         self.comm_device._write(self.sanitize(data_to_send))
@@ -110,10 +88,22 @@ class ki6487(SCPIDevice):
         else:
             return 0,response.decode().strip()
 
-                
+
+
+
+class ki6487_acq(ki6487):
+
+    def init(self):
+        print(self.idn())
+        print(self.get_ident())
+
+
+    
+        
 if __name__ == "__main__":
 
     
-    k = ki6487("usb_prologix(pid=24577,vid=1027,sn=None,baudrate=57600,timeout=10)")
-    print(k.idn())
+    k = ki6487_acq("usb_prologix(pid=24577,vid=1027,sn=None,baudrate=57600,timeout=10)")
+    print(k.init())
+              
     

@@ -52,6 +52,9 @@ class UsbSerial(object):
 
 
 class UsbPrologix(UsbSerial):
+     confstring_def={
+         "gpib_addr":int,
+     }
 
     def __init__(self, confstring):
         super().__init__(confstring)
