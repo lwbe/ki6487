@@ -16,7 +16,8 @@ def get_info_from_device_path(device_paths, devices):
                 r.append({"device":d.device,
                           "pid":d.pid,
                           "vid":d.vid,
-                          "serial_number":d.serial_number})
+                          "serial_number":d.serial_number,
+                          "manufacturer":d.manufacturer})
     return r
 
 def get_dev_path_from_pid_vid_sn(pid,vid,serial_number,devices):
